@@ -12,125 +12,131 @@ import kotlin.random.Random
 
 class SetupMoulds(script: GiantsFoundry) : Leaf<GiantsFoundry>(script, "Setup moulds") {
 
+    override fun execute() {
+        val jig = script.jig()
+        val action = if (jig.actions().contains("Check")) "Check" else "Setup"
+        
+        // Check if the mould widget is open before proceeding
+        if (script.mouldWidgetOpen()) {
+            // Reset if something went wrong
+            if (action == "Check") {
+                script.logger.info("Something went wrong setting up moulds, resetting")
+                val resetButton = resetButton()
+                if (resetButton?.interact("Reset") == true) {
+                    waitFor { script.jig().name.contains("Empty") }
+                }
+            }
 
-	fun mouldContainer() = mouldWidget().component(9)
+            // Ensure all moulds are selected properly
+            val mouldType = MouldType.values().firstOrNull { !it.hasSelectedAny() }
+            if (mouldType == null) {
+                script.logger.info("All are set, closing widget!")
+                val setButton = mouldWidget().firstOrNull { it?.actions()?.contains("Set") == true }
+                if (setButton?.interact("Set") == true) {
+                    if (!waitFor { script.jig().name.contains("Setup") }) {
+                        handleGlitch()  // Handle possible glitch in selection
+                    }
+                }
+                return
+            }
+            
+            // Navigate to the correct mould page
+            if (!selectPage(mouldType)) {
+                script.logger.info("Unable to navigate to unselected mould page...")
+                return
+            }
 
-	private fun resetButton() = mouldWidget().firstOrNull { it?.actions()?.contains("Reset") == true }
+            // Find the best mould and select it
+            val bonus = getComission()
+            script.logger.info("Setting moulds for types: [${bonus.joinToString(", ")}]")
+            if (bonus.isEmpty()) return
 
+            val bestMould = getPageMoulds().maxByOrNull { mould ->
+                mould.second.filter { it.type in bonus }.sumOf { it.amount }
+            } ?: return
 
-	private fun getComission(): List<BonusType> {
-		val widget = mouldWidget()
-		val first = BonusType.forText(widget.component(27).text()) ?: return emptyList()
-		val second = BonusType.forText(widget.component(29).text()) ?: return emptyList()
-		return listOf(first, second)
-	}
+            if (bestMould.first.name().isNotBlank()) {
+                val scrollBar = mouldWidget().component(11).component(1)
+                if (verticalScrollTo(bestMould.first, mouldContainer(), scrollBar)) {
+                    bestMould.first.click()
+                    val selected = waitFor { mouldType.hasSelectedAny() }
+                    script.logger.info("Selected bestMould successfully=$selected")
+                }
+            }
 
-	private fun selectPage(mouldType: MouldType): Boolean {
-		if (MouldType.openPage() == mouldType) return true
-		val button = mouldWidget().firstOrNull { it?.name()?.contains(mouldType.name) == true } ?: return false
-		return button.click()
-			&& waitFor { MouldType.openPage() == mouldType }
-	}
+        } else if (Bank.close()) {
+            // Ensure jig interaction to open the mould widget
+            if (jig.interact(action)) {
+                waitFor { script.mouldWidgetOpen() }
+            }
+        }
+    }
 
-	override fun execute() {
-		val jig = script.jig()
-		val action = if (jig.actions().contains("Check")) "Check" else "Setup"
-		if (script.mouldWidgetOpen()) {
-			if (action == "Check") {
-				script.logger.info("Something went wrong setting up moulds, resetting")
-				val resetButton = mouldWidget().firstOrNull { it?.actions()?.contains("Reset") == true }
-				if (resetButton?.interact("Reset") == true) {
-					waitFor { script.jig().name.contains("Empty") }
-				}
-			}
-			val mouldType = MouldType.values().firstOrNull { !it.hasSelectedAny() }
-			if (mouldType == null) {
-				script.logger.info("All are set, closing widget!")
-				val setButton = mouldWidget().firstOrNull { it?.actions()?.contains("Set") == true }
-				if (setButton?.interact("Set") == true) {
-					if (!waitFor { script.jig().name.contains("Setup") }) {
-						val selectionContainer = mouldWidget().component(MOULD_SELECTION_CONTAINER)
-						selectionContainer.firstOrNull { it?.textColor() == MOULD_SELECTED_COLOR } ?: Component.Nil
-						val index = selectionContainer.indexOf(selectionContainer)
-						script.logger.info(
-							"Glitch with selected=[${
-								MouldType.values().map { it.selected() }
-							}], textures=[${
-								MouldType.values().map { it.selectedTexture() }
-							}] indexOfSelector=$index"
-						)
-						resetButton()?.click()
-					}
-				}
-				return
-			}
-			if (!selectPage(mouldType)) {
-				script.logger.info("Unable to navigate to unselected mould page...")
-				return
-			}
+    // Handle possible glitch in selection
+    private fun handleGlitch() {
+        val selectionContainer = mouldWidget().component(MOULD_SELECTION_CONTAINER)
+        selectionContainer.firstOrNull { it?.textColor() == MOULD_SELECTED_COLOR } ?: Component.Nil
+        val index = selectionContainer.indexOf(selectionContainer)
+        script.logger.info(
+            "Glitch with selected=[${
+                MouldType.values().map { it.selected() }
+            }], textures=[${
+                MouldType.values().map { it.selectedTexture() }
+            }] indexOfSelector=$index"
+        )
+        resetButton()?.click()
+    }
 
-			val bonus = getComission()
-			script.logger.info("Setting moulds for types: [${bonus.joinToString(", ")}]")
-			if (bonus.isEmpty()) {
-				return
-			}
+    private fun mouldContainer() = mouldWidget().component(9)
 
-			val bestMould = getPageMoulds().maxByOrNull { mould ->
-				mould.second.filter { it.type in bonus }.sumOf { it.amount }
-			} ?: return
+    private fun resetButton() = mouldWidget().firstOrNull { it?.actions()?.contains("Reset") == true }
 
-			val bonusStr = bestMould.second.joinToString(separator = ", ") { "${it.type}: ${it.amount}" }
-			script.logger.info("Found max mould=${bonusStr}, isSelected=${bestMould.first.name().isBlank()}")
+    private fun selectPage(mouldType: MouldType): Boolean {
+        if (MouldType.openPage() == mouldType) return true
+        val button = mouldWidget().firstOrNull { it?.name()?.contains(mouldType.name) == true } ?: return false
+        return button.click()
+            && waitFor { MouldType.openPage() == mouldType }
+    }
 
-			if (bestMould.first.name().isNotBlank()) {
-				val scrollBar = mouldWidget().component(11).component(1)
-				if (verticalScrollTo(bestMould.first, mouldContainer(), scrollBar)) {
-					bestMould.first.click()
-					val selected = waitFor { mouldType.hasSelectedAny() }
-					script.logger.info("Selected bestMould successfully=$selected")
-				}
-			}
-		} else if (Bank.close()) {
-			if (jig.interact(action)) {
-				waitFor { script.mouldWidgetOpen() }
-			}
-		}
-	}
+    private fun getComission(): List<BonusType> {
+        val widget = mouldWidget()
+        val first = BonusType.forText(widget.component(27).text()) ?: return emptyList()
+        val second = BonusType.forText(widget.component(29).text()) ?: return emptyList()
+        return listOf(first, second)
+    }
 
-	private fun getPageMoulds(): List<Pair<Component, List<Bonus>>> {
-		val container = mouldContainer()
-		val buttons = container.filterNotNull().filter { it.width() == container.width() }
-		return buttons.map { button ->
-			val bonuses = container.filterNotNull().filter { comp ->
-				comp.index() in button.index() + 1..button.index() + 16 && BonusType.isBonus(comp)
-			}.map { Bonus(BonusType.forComp(it)!!, container.component(it.index() + 1).text().toInt()) }
-//            script.logger.info("Children for ${button.text()}: size= ${children.size}, bonuses=${children.joinToString()}")
-			Pair(button, bonuses)
-		}
-	}
+    private fun getPageMoulds(): List<Pair<Component, List<Bonus>>> {
+        val container = mouldContainer()
+        val buttons = container.filterNotNull().filter { it.width() == container.width() }
+        return buttons.map { button ->
+            val bonuses = container.filterNotNull().filter { comp ->
+                comp.index() in button.index() + 1..button.index() + 16 && BonusType.isBonus(comp)
+            }.map { Bonus(BonusType.forComp(it)!!, container.component(it.index() + 1).text().toInt()) }
+            Pair(button, bonuses)
+        }
+    }
 
-	fun verticalScrollTo(mouldButton: Component, container: Component, scrollBar: Component): Boolean {
-		val topY = container.screenPoint().y - 5
-		val bottomY = topY + container.height() - 20
+    fun verticalScrollTo(mouldButton: Component, container: Component, scrollBar: Component): Boolean {
+        val topY = container.screenPoint().y - 5
+        val bottomY = topY + container.height() - 20
 
-		fun visible() = mouldButton.screenPoint().y in topY..bottomY
+        fun visible() = mouldButton.screenPoint().y in topY..bottomY
 
-		fun grabPoint(): Point {
-			val point = scrollBar.screenPoint()
-			return Point(
-				point.x + Random.nextInt(3, scrollBar.width() - 3),
-				point.y + Random.nextInt(3, scrollBar.height() - 3)
-			)
-		}
+        fun grabPoint(): Point {
+            val point = scrollBar.screenPoint()
+            return Point(
+                point.x + Random.nextInt(3, scrollBar.width() - 3),
+                point.y + Random.nextInt(3, scrollBar.height() - 3)
+            )
+        }
 
-		val grabPoint = grabPoint()
-		val scrollY = mouldButton.screenPoint().y
-		val distance = abs(scrollY - topY)
-		val minY = grabPoint.y - distance
-		val maxY = grabPoint.y + distance
-		return Input.dragUntil(grabPoint.x, grabPoint.y, minY, maxY, 5) { visible() }
-	}
+        val grabPoint = grabPoint()
+        val scrollY = mouldButton.screenPoint().y
+        val distance = abs(scrollY - topY)
+        val minY = grabPoint.y - distance
+        val maxY = grabPoint.y + distance
+        return Input.dragUntil(grabPoint.x, grabPoint.y, minY, maxY, 5) { visible() }
+    }
 
-	data class Bonus(val type: BonusType, val amount: Int)
-
+    data class Bonus(val type: BonusType, val amount: Int)
 }

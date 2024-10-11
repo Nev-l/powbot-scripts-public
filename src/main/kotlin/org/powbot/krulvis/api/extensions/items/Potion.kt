@@ -37,6 +37,7 @@ enum class Potion(
 	ANTIPOISON(-1, -1, 2446, 175, 177, 179),
 	SUPER_ANTIPOISON(-1, -1, 2448, 181, 183, 185),
 	SUPER_RESTORE(Constants.SKILLS_PRAYER, -1, 3024, 3026, 3028, 3030)
+	MOONLIGHT(Constants.SKILLS_PRAYER, -1, 29080, 29081, 29082, 29083)
 	;
 
 	override val itemName: String = "${name.lowercase().replace("_", " ")} potion"

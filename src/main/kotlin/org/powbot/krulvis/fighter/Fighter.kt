@@ -156,7 +156,7 @@ class Fighter : KillerScript(), UniqueLootTracker {
 		super.onStart()
 		Defender.lastDefenderIndex = currentDefenderIndex()
 		if (prayAtNearbyAltar) {
-			ShouldSipPotion.skippingPotions.addAll(listOf(Potion.PRAYER, Potion.SUPER_RESTORE))
+			ShouldSipPotion.skippingPotions.addAll(listOf(Potion.PRAYER, Potion.SUPER_RESTORE, Potion.MOONLIGHT))
 		}
 
 		val bankTeleportItemReqs =
